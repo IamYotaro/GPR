@@ -1,5 +1,9 @@
 import numpy as np
 import os
+import pickle
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
 np.random.seed(123)
 
 PATH = 'E:/AnacondaProjects/GPR'
@@ -60,7 +64,7 @@ def kernel_matrix(theta):
 def log_likelihood(theta):
     K_m = kernel_matrix(theta)
     L = - np.log(np.linalg.det(K_m)) - Y_norm_m.T * np.linalg.inv(K_m) * Y_norm_m
-    return L
+    return - L
 
 # graddient log-likelihood
 def grad_log_likelihood(theta):
@@ -90,14 +94,11 @@ def grad_log_likelihood(theta):
     grad_L_eta = np.array(grad_L_eta).ravel()
     
     grad_L = np.array([grad_L_tau, grad_L_sigma, grad_L_eta])
-    return grad_L
+    return - grad_L
 
 
 #%%
-
-import pickle
-from tqdm import tqdm
-
+'''
 upper = 50
 tick = 0.1
 	
@@ -105,7 +106,7 @@ theta_1 = np.array([np.arange(0.1, upper+tick, tick)])
 theta_2 = np.array([np.arange(0.1, upper+tick, tick)])
 theta_3 = np.array([np.arange(0.1, upper+tick, tick)])
 
-'''
+
 n = int(upper / tick)
 Z = np.zeros(shape=(n,n,n))
 for i in tqdm(range(n)):
@@ -119,7 +120,10 @@ pickle.dump(Z,f)
 f.close
 '''
 #%%
-import pickle
+'''
+# log-likelihood, grad_L is not negative
+# log-likelihood is monotonically increasing
+# optimum theta is Z max 
 
 f = open('E:/AnacondaProjects/heavy_pickle/GPR/Z.pickle','rb')
 Z = pickle.load(f)
@@ -128,28 +132,17 @@ Z_max_pos = np.unravel_index(np.argmax(Z), Z.shape)
 Z_max = Z[Z_max_pos[0], Z_max_pos[1]]
 
 #%%
-from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-X, Y, Z = np.mgrid[-1:1:10j, -1:1:10j, -1:1:10j]
-
-T = np.exp(-X**2 - Y**2 - Z**2)
+theta_1, theta_2, theta_3 = np.mgrid[0.1:50.1:0.1, 0.1:50.1:0.1, 0.1:50.1:0.1]
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
-scat = ax.scatter(X, Y, Z, c=Z.flatten(), alpha=0.5)
+scat = ax.scatter(theta_1, theta_2, theta_3, c=Z.flatten(), alpha=0.5)
 fig.colorbar(scat, shrink=0.5, aspect=5)
 
-
-X, Y, Z = np.mgrid[-1:1:10j, -1:1:10j, -1:1:10j]
-
-T = np.exp(-X**2 - Y**2 - Z**2)
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-scat = ax.scatter(X, Y, Z, c=Z.flatten(), alpha=0.5)
-fig.colorbar(scat, shrink=0.5, aspect=5)
 #%%
+# old code
 import matplotlib.pyplot as plt
 import pickle
 
@@ -163,26 +156,46 @@ plt.colorbar()
 plt.savefig('heatmap.png', dpi=300)
 plt.show()
 
-#%%
 '''
+#%%
 # gradient descent
-def gradient_descent(theta_init, learning_rate, iteration_max):
+def gradient_descent(theta_init, learning_rate, iteration):
     theta = theta_init
-    for i in range(iteration_max):
+    L_log = log_likelihood(theta)
+    for i in tqdm(range(iteration)):
         grad_L = grad_log_likelihood(theta).reshape(3)
-        theta_new = theta - learning_rate * grad_L
-    return theta_new
+        theta_old = theta
+        theta = theta - learning_rate * grad_L
+        if any(theta <= 0) == True:
+            theta = theta_old
+            learning_rate = learning_rate * 0.1
+        elif any(np.isnan(theta) == True) == True:
+            theta = theta_old
+            learning_rate = learning_rate * 0.1
+        elif i == iteration-1 and any(theta <= 0) == True:
+            theta = theta_old
+        L_log = np.concatenate([L_log, log_likelihood(theta)], axis=0)
+    return theta, L_log
 
-theta_init = np.random.rand(3)
-learning_rate = 0.001
-iteration_max = 100
-theta_opt = gradient_descent(theta_init, learning_rate, iteration_max)
+theta_init = np.random.rand(3) * 10
+learning_rate = 0.01
+iteration = 3000
+theta, L_log = gradient_descent(theta_init, learning_rate, iteration)
 
-print('log-likelihood: {}'.format(log_likelihood(theta_opt)))
-'''
+print('log-likelihood: {}'.format(log_likelihood(theta)[0]))
+
 #%%
+fig, ax = plt.subplots(1,1, figsize=(16,9))
+ax.plot(L_log)
+ax.grid(True)
+ax.set_xlabel('iteration', fontsize=12)
+ax.set_ylabel('log-likelihood', fontsize=12)
+plt.savefig('L_log.png', dpi=300)
+plt.show()
+
+#%%
+'''
 # expected predictive distribution
-theta = np.array([0.1*Z_max_pos[0], 0.1*Z_max_pos[1], 0])
 C_nonnoise = np.zeros(shape=(X_norm_m.shape[0]+X_test_norm_m.shape[0], X_norm_m.shape[0]+X_test_norm_m.shape[0]))
 stack_X = np.concatenate([X_norm_m, X_test_norm_m], axis=0)
 for i in range(stack_X.shape[0]):
@@ -207,3 +220,4 @@ Y_std = np.std(Y, axis=0)
 Y_pred = E_y * Y_std + Y_mean
 
 print(Y_pred)
+'''
